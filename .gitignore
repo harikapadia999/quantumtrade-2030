@@ -1,0 +1,93 @@
+# Dependencies
+node_modules/
+target/
+__pycache__/
+*.pyc
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.next/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+.pytest_cache/
+htmlcov/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Rust
+Cargo.lock
+**/*.rs.bk
+
+# Python
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# ML Models
+*.pth
+*.pt
+*.h5
+*.pkl
+*.joblib
+models/*.bin
+
+# Secrets
+*.pem
+*.key
+*.cert
+secrets/
+credentials/
+
+# Docker
+.dockerignore
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Quantum
+.qiskit/
+quantum_cache/
