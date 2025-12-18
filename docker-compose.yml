@@ -1,0 +1,250 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: quantumtrade-postgres
+    environment:
+      POSTGRES_DB: quantumtrade
+      POSTGRES_USER: quantumtrade
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantumtrade"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # TimescaleDB for time-series data
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: quantumtrade-timescaledb
+    environment:
+      POSTGRES_DB: market_data
+      POSTGRES_USER: quantumtrade
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-changeme}
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantumtrade"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: quantumtrade-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Apache Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: quantumtrade-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: quantumtrade-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: quantumtrade-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: quantumtrade-kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: quantumtrade-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: quantumtrade-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+
+  # Trading Engine (Rust)
+  trading-engine:
+    build:
+      context: ./backend/trading-engine
+      dockerfile: Dockerfile
+    container_name: quantumtrade-trading-engine
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+    environment:
+      DATABASE_URL: postgresql://quantumtrade:${POSTGRES_PASSWORD:-changeme}@postgres:5432/quantumtrade
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9093
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # API Gateway (Node.js)
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: quantumtrade-api-gateway
+    depends_on:
+      - postgres
+      - redis
+      - trading-engine
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://quantumtrade:${POSTGRES_PASSWORD:-changeme}@postgres:5432/quantumtrade
+      REDIS_URL: redis://redis:6379
+      TRADING_ENGINE_URL: http://trading-engine:8080
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key}
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # Market Data Service (Go)
+  market-data:
+    build:
+      context: ./backend/market-data
+      dockerfile: Dockerfile
+    container_name: quantumtrade-market-data
+    depends_on:
+      - timescaledb
+      - kafka
+      - redis
+    environment:
+      DATABASE_URL: postgresql://quantumtrade:${TIMESCALE_PASSWORD:-changeme}@timescaledb:5432/market_data
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9093
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+  # AI/ML Prediction Service (Python)
+  ai-prediction:
+    build:
+      context: ./ai-ml/prediction
+      dockerfile: Dockerfile
+    container_name: quantumtrade-ai-prediction
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgresql://quantumtrade:${POSTGRES_PASSWORD:-changeme}@postgres:5432/quantumtrade
+      REDIS_URL: redis://redis:6379
+      MODEL_PATH: /models
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./ai-ml/models:/models
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: ./frontend/web
+      dockerfile: Dockerfile
+    container_name: quantumtrade-frontend
+    depends_on:
+      - api-gateway
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+      NEXT_PUBLIC_WS_URL: ws://localhost:3000
+    ports:
+      - "3002:3000"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  timescale_data:
+  redis_data:
+  kafka_data:
+  elasticsearch_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: quantumtrade-network
