@@ -1,0 +1,42 @@
+[package]
+name = "quantumtrade-engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["QuantumTrade Team"]
+description = "High-performance trading engine for QuantumTrade 2030"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rust_decimal = "1.33"
+chrono = "0.4"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dashmap = "5.5"
+crossbeam = "0.8"
+rayon = "1.8"
+parking_lot = "0.12"
+async-trait = "0.1"
+futures = "0.3"
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "uuid", "chrono"] }
+rdkafka = "0.36"
+tonic = "0.10"
+prost = "0.12"
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.4"
+
+[[bench]]
+name = "order_matching"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
