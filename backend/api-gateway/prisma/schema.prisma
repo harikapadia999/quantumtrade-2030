@@ -1,0 +1,224 @@
+// Prisma schema for QuantumTrade 2030
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  firstName         String    @map("first_name")
+  lastName          String    @map("last_name")
+  phoneNumber       String?   @map("phone_number")
+  role              String    @default("user")
+  emailVerified     Boolean   @default(false) @map("email_verified")
+  verificationToken String?   @map("verification_token")
+  twoFactorEnabled  Boolean   @default(false) @map("two_factor_enabled")
+  twoFactorSecret   String?   @map("two_factor_secret")
+  lastLogin         DateTime? @map("last_login")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  portfolio Portfolio?
+  orders    Order[]
+  trades    Trade[]
+  positions Position[]
+  sessions  Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Portfolio {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @map("user_id")
+  cashBalance         Decimal  @default(0) @map("cash_balance") @db.Decimal(20, 8)
+  totalEquity         Decimal  @default(0) @map("total_equity") @db.Decimal(20, 8)
+  totalMarginUsed     Decimal  @default(0) @map("total_margin_used") @db.Decimal(20, 8)
+  availableMargin     Decimal  @default(0) @map("available_margin") @db.Decimal(20, 8)
+  totalUnrealizedPnl  Decimal  @default(0) @map("total_unrealized_pnl") @db.Decimal(20, 8)
+  totalRealizedPnl    Decimal  @default(0) @map("total_realized_pnl") @db.Decimal(20, 8)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("portfolios")
+}
+
+model Order {
+  id              String    @id @default(uuid())
+  userId          String    @map("user_id")
+  symbol          String
+  side            String // buy, sell
+  type            String // market, limit, stop_loss, stop_limit
+  quantity        Decimal   @db.Decimal(20, 8)
+  price           Decimal?  @db.Decimal(20, 8)
+  stopPrice       Decimal?  @map("stop_price") @db.Decimal(20, 8)
+  filledQuantity  Decimal   @default(0) @map("filled_quantity") @db.Decimal(20, 8)
+  averageFillPrice Decimal? @map("average_fill_price") @db.Decimal(20, 8)
+  status          String // pending, open, partially_filled, filled, cancelled, rejected
+  timeInForce     String    @map("time_in_force") // GTC, IOC, FOK, GTD
+  leverage        Decimal   @default(1) @db.Decimal(10, 2)
+  reduceOnly      Boolean   @default(false) @map("reduce_only")
+  postOnly        Boolean   @default(false) @map("post_only")
+  executionTime   Int?      @map("execution_time") // milliseconds
+  slippage        Decimal?  @db.Decimal(10, 8)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  expiresAt       DateTime? @map("expires_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trades Trade[]
+
+  @@index([userId, status])
+  @@index([symbol, status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model Trade {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  orderId     String   @map("order_id")
+  symbol      String
+  side        String // buy, sell
+  quantity    Decimal  @db.Decimal(20, 8)
+  price       Decimal  @db.Decimal(20, 8)
+  fee         Decimal  @default(0) @db.Decimal(20, 8)
+  pnl         Decimal? @db.Decimal(20, 8)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([symbol, createdAt])
+  @@map("trades")
+}
+
+model Position {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  symbol              String
+  quantity            Decimal  @db.Decimal(20, 8)
+  averageEntryPrice   Decimal  @map("average_entry_price") @db.Decimal(20, 8)
+  currentPrice        Decimal  @map("current_price") @db.Decimal(20, 8)
+  unrealizedPnl       Decimal  @default(0) @map("unrealized_pnl") @db.Decimal(20, 8)
+  realizedPnl         Decimal  @default(0) @map("realized_pnl") @db.Decimal(20, 8)
+  marginUsed          Decimal  @map("margin_used") @db.Decimal(20, 8)
+  leverage            Decimal  @db.Decimal(10, 2)
+  liquidationPrice    Decimal? @map("liquidation_price") @db.Decimal(20, 8)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, symbol])
+  @@index([userId])
+  @@map("positions")
+}
+
+model MarketData {
+  id          String   @id @default(uuid())
+  symbol      String   @unique
+  price       Decimal  @db.Decimal(20, 8)
+  change24h   Decimal  @map("change_24h") @db.Decimal(10, 4)
+  volume24h   Decimal  @map("volume_24h") @db.Decimal(20, 8)
+  high24h     Decimal  @map("high_24h") @db.Decimal(20, 8)
+  low24h      Decimal  @map("low_24h") @db.Decimal(20, 8)
+  marketCap   Decimal? @map("market_cap") @db.Decimal(30, 2)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("market_data")
+}
+
+model Candle {
+  id        String   @id @default(uuid())
+  symbol    String
+  interval  String // 1m, 5m, 15m, 1h, 4h, 1d
+  timestamp DateTime
+  open      Decimal  @db.Decimal(20, 8)
+  high      Decimal  @db.Decimal(20, 8)
+  low       Decimal  @db.Decimal(20, 8)
+  close     Decimal  @db.Decimal(20, 8)
+  volume    Decimal  @db.Decimal(20, 8)
+
+  @@unique([symbol, interval, timestamp])
+  @@index([symbol, interval, timestamp])
+  @@map("candles")
+}
+
+model AIPrediction {
+  id          String   @id @default(uuid())
+  symbol      String
+  horizon     String // 1m, 5m, 15m, 1h, 4h, 1d
+  priceChange Decimal  @map("price_change") @db.Decimal(10, 4)
+  confidence  Decimal  @db.Decimal(5, 4)
+  direction   String // up, down, neutral
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([symbol, horizon, createdAt])
+  @@map("ai_predictions")
+}
+
+model SentimentScore {
+  id         String   @id @default(uuid())
+  symbol     String
+  sentiment  Decimal  @db.Decimal(5, 4) // -1 to +1
+  confidence Decimal  @db.Decimal(5, 4)
+  volume     Int // number of mentions
+  sources    Json // source breakdown
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([symbol, createdAt])
+  @@map("sentiment_scores")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String // order_filled, position_liquidated, price_alert, etc.
+  title     String
+  message   String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, read, createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
