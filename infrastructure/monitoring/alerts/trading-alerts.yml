@@ -1,0 +1,168 @@
+groups:
+  - name: trading_alerts
+    interval: 30s
+    rules:
+      # High order execution latency
+      - alert: HighOrderExecutionLatency
+        expr: histogram_quantile(0.99, rate(order_execution_time_seconds_bucket[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: trading-engine
+        annotations:
+          summary: "High order execution latency"
+          description: "99th percentile order execution time is {{ $value }}s (threshold: 0.1s)"
+
+      # Critical order execution latency
+      - alert: CriticalOrderExecutionLatency
+        expr: histogram_quantile(0.99, rate(order_execution_time_seconds_bucket[5m])) > 1
+        for: 2m
+        labels:
+          severity: critical
+          component: trading-engine
+        annotations:
+          summary: "Critical order execution latency"
+          description: "99th percentile order execution time is {{ $value }}s (threshold: 1s)"
+
+      # High order rejection rate
+      - alert: HighOrderRejectionRate
+        expr: rate(orders_rejected_total[5m]) / rate(orders_submitted_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: trading-engine
+        annotations:
+          summary: "High order rejection rate"
+          description: "Order rejection rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # Trading engine down
+      - alert: TradingEngineDown
+        expr: up{job="trading-engine"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: trading-engine
+        annotations:
+          summary: "Trading engine is down"
+          description: "Trading engine has been down for more than 1 minute"
+
+      # High API error rate
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api-gateway
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Database connection pool exhausted
+      - alert: DatabasePoolExhausted
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Database is using {{ $value | humanizePercentage }} of max connections"
+
+      # Redis memory usage high
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis is using {{ $value | humanizePercentage }} of max memory"
+
+      # Kafka consumer lag
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_lag > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: kafka
+        annotations:
+          summary: "High Kafka consumer lag"
+          description: "Consumer lag is {{ $value }} messages (threshold: 1000)"
+
+      # Disk space low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Disk space low"
+          description: "Disk space is {{ $value | humanizePercentage }} full"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% (threshold: 80%)"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # WebSocket connection drop
+      - alert: WebSocketConnectionDrop
+        expr: rate(active_websocket_connections[5m]) < -10
+        for: 2m
+        labels:
+          severity: warning
+          component: api-gateway
+        annotations:
+          summary: "Significant WebSocket connection drop"
+          description: "WebSocket connections dropped by {{ $value }} in 5 minutes"
+
+      # AI model prediction latency
+      - alert: HighAIPredictionLatency
+        expr: histogram_quantile(0.95, rate(ai_prediction_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: ai-prediction
+        annotations:
+          summary: "High AI prediction latency"
+          description: "95th percentile prediction time is {{ $value }}s (threshold: 1s)"
+
+      # Liquidation risk
+      - alert: PositionLiquidationRisk
+        expr: positions_at_liquidation_risk > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: risk-management
+        annotations:
+          summary: "Positions at liquidation risk"
+          description: "{{ $value }} positions are at risk of liquidation"
+
+      # Abnormal trading volume
+      - alert: AbnormalTradingVolume
+        expr: rate(trading_volume_total[5m]) > 2 * avg_over_time(rate(trading_volume_total[5m])[1h:5m])
+        for: 5m
+        labels:
+          severity: info
+          component: trading-engine
+        annotations:
+          summary: "Abnormal trading volume detected"
+          description: "Trading volume is {{ $value }}x higher than average"
